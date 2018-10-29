@@ -2,6 +2,8 @@
 #include <iostream>
 #include <ctime>
 #include <fstream>
+#include <cstdlib>
+#include <cstdio>
 using namespace std;
 #define Main_Process		0
 #define Port_Size_Vector	2
@@ -21,10 +23,12 @@ double** Create_matr(int _size_row, int _size_column) {// генерация матрицы
 	double** _matr = new double*[_size_row];
 	for (int i = 0; i < _size_row; i++)
 		_matr[i] = new double[_size_column];
-	
+	int a = 0, b = 0;
+	cout << endl << "Enter range [a,b]" << endl;
+	cin >> a >> b;
 	for (int i = 0; i < _size_row; i++)
 		for (int j = 0; j < _size_column; j++)
-			_matr[i][j] = (rand() % 200)  - 99;
+			_matr[i][j] = rand() % (b - a + 1) + a;
 	return _matr;
 }
 
@@ -45,7 +49,7 @@ void Show_matr(double** _matr, int _size_row, int _size_column) {// вывод матриц
 		return;
 	if (_size_row < 21 || _size_column < 11) {
 		cout << "Matrix " << _size_row << "x" << _size_column << endl;
-		
+
 		for (int i = 0; i < _size_row; i++) {
 			for (int j = 0; j < _size_column; j++) {
 				cout.width(7);
@@ -83,7 +87,7 @@ int main(int argc, char * argv[]) {
 	MPI_Comm_rank(MPI_COMM_WORLD, &proc_rank);	// функция определения номера текущего процесса
 
 	if (proc_num < 1) {
-		printf("Error! The number of processes must be at least 1");
+		cout << "Error! The number of processes must be at least 1";
 		return -1;
 	}
 	if (proc_rank == Main_Process) {						// код главного процесса
@@ -99,7 +103,7 @@ int main(int argc, char * argv[]) {
 		double time_start_seque = 0, time_start_paral = 0;	// время начала работы -//-
 		double time_end_seque = 0, time_end_paral = 0;		// время конца работы -//-
 
-		// ввод размеров матрицы
+															// ввод размеров матрицы
 		cout << "Input size of row: ";
 		cin >> size_row;
 		cout << "Input size of column: ";
@@ -108,13 +112,13 @@ int main(int argc, char * argv[]) {
 		// генерация матрицы и преобразование ее в вектор
 		matr = Create_matr(size_row, size_column);
 		if (matr == NULL) {
-			printf("Error! Incorrect input data for matrix");
+			cout << "Error! Incorrect input data for matrix";
 			return -1;
 		}
 		size_vec = size_row * size_column;
 		matr_as_vec = Matr_to_vec(matr, size_row, size_column);
 		if (matr == NULL) {
-			printf("Error! Incorrect input data for vector");
+			cout << "Error! Incorrect input data for vector";
 			return -1;
 		}
 
@@ -184,7 +188,7 @@ int main(int argc, char * argv[]) {
 	}
 	else { // код вспомогательных процессов
 
-		// прием данных из главного процесса
+		   // прием данных из главного процесса
 		MPI_Recv(&size_vec_for_proc, 1, MPI_INT, Main_Process, Port_Size_Vector, MPI_COMM_WORLD, &stat);
 		double* vec = new double[size_vec_for_proc];
 		MPI_Recv(vec, size_vec_for_proc, MPI_DOUBLE, Main_Process, Port_Vector, MPI_COMM_WORLD, &stat);
