@@ -20,7 +20,6 @@ double** Create_matr(int _row, int _column) {// генераци€ матрицы
 			_matr[i][j] = rand() % (b - a + 1) + a;
 
 
-
 	return _matr;
 }
 double* Create_vec(int _size) {// генераци€ вектора
@@ -33,6 +32,8 @@ double* Create_vec(int _size) {// генераци€ вектора
 	cin >> a >> b;
 	for (int i = 0; i < _size; i++)
 		_vec[i] = rand() % (b - a + 1) + a;
+
+
 
 	return _vec;
 }
@@ -122,10 +123,14 @@ int main(int argc, char * argv[]) {
 	double time_start_seque = 0, time_start_paral = 0;	// врем€ начала работы -//-
 	double time_end_seque = 0, time_end_paral = 0;		// врем€ конца работы -//-
 
-	double* part_matr_as_vec = NULL;
-	double* part_vec = NULL;
-	double* part_res = NULL;
-	double* part_sum = NULL;
+	double* part_matr_as_vec = NULL;					// часть матрицы принимаема€ каждым процессом
+	double* part_vec = NULL;							// часть вектора -//-
+	double* part_res = NULL;							// часть результата
+
+	int* displs_m = NULL;								// массив смещений в матрице
+	int* sendcounts_m = NULL;							// массив длин подматриц
+	int* displs_v = NULL;								// массив смещений в векторе
+	int* sendcounts_v = NULL;							// массив длин подвекторов
 
 	int err_code = 0;
 	MPI_Status stat;							// структура атрибутов сообщений дл€ "общени€" процессов
@@ -145,7 +150,6 @@ int main(int argc, char * argv[]) {
 		cout << "Enter the number of columns: ";
 		cin >> column;
 
-		part_sum = new double[proc_num * row];
 		res_seque = new double[row];
 		res_paral = new double[row];
 		for (int i = 0; i < row; i++) {
@@ -169,55 +173,63 @@ int main(int argc, char * argv[]) {
 			cout << "Error! Incorrect input data for matrix as vector";
 			return -1;
 		}
-		// подсчет объема работы каждого процесса
+		// подсчет объема работы каждого процесса 
 		numb_columns = column / proc_num;
-		size_part_vec = numb_columns * row;
+		int ost = column % proc_num;
 
+		displs_m = new int[proc_num];
+		sendcounts_m = new int[proc_num];
+		displs_v = new int[proc_num];
+		sendcounts_v = new int[proc_num];
+
+		for (int i = 0; i < ost; i++) 
+			sendcounts_v[i] = numb_columns + 1;
+		for (int i = ost; i < proc_num; i++) 
+			sendcounts_v[i] = numb_columns;
+
+		sendcounts_m[0] = sendcounts_v[0] * row;
+		displs_v[0] = 0;
+		displs_m[0] = 0;
+		for (int i = 1; i < proc_num; i++) {
+			sendcounts_m[i] = sendcounts_v[i] * row;
+			displs_v[i] = displs_v[i - 1] + sendcounts_v[i - 1];
+			displs_m[i] = displs_m[i - 1] + sendcounts_m[i - 1];
+		}
 	}
-
 	// Ќј„јЋќ ѕј–јЋЋ≈Ћ№Ќќ√ќ јЋ√ќ–»“ћј
-	// отправка каждому процессу массива данных и их кол-во
-	MPI_Bcast(&size_part_vec, 1, MPI_INT, Main_Process,MPI_COMM_WORLD);
-	MPI_Bcast(&row, 1, MPI_INT, Main_Process, MPI_COMM_WORLD);
 
-	numb_columns = size_part_vec / row;
+	// отправка каждому процессу массива данных и их кол-во
+	MPI_Bcast(&row, 1, MPI_INT, Main_Process, MPI_COMM_WORLD);
+	MPI_Bcast(&column, 1, MPI_INT, Main_Process, MPI_COMM_WORLD);
+
+	numb_columns = column / proc_num;
+	if (proc_rank < column % proc_num)
+		numb_columns++;
+	size_part_vec = numb_columns * row;
+
 	part_matr_as_vec = new double[size_part_vec];
 	part_vec = new double[numb_columns];
 	part_res = new double[row];
 	for (int i = 0; i < row; i++)
 		part_res[i] = 0;
 	
-	MPI_Scatter(matr_as_vec,size_part_vec, MPI_DOUBLE, part_matr_as_vec, size_part_vec, MPI_DOUBLE, Main_Process,MPI_COMM_WORLD);
-	MPI_Scatter(vec, numb_columns, MPI_DOUBLE, part_vec, numb_columns, MPI_DOUBLE, Main_Process, MPI_COMM_WORLD);
+	MPI_Scatterv(matr_as_vec, sendcounts_m, displs_m, MPI_DOUBLE, part_matr_as_vec, size_part_vec, MPI_DOUBLE, Main_Process,MPI_COMM_WORLD);
+	MPI_Scatterv(vec, sendcounts_v, displs_v, MPI_DOUBLE, part_vec, numb_columns, MPI_DOUBLE, Main_Process, MPI_COMM_WORLD);
 
-	///////////////////////////////////////////////
 	if (proc_rank == Main_Process)
 		time_start_paral = MPI_Wtime();
-
+	
 	for (int i = 0; i < row; i++)
 		for (int j = 0; j < numb_columns; j++)
 			part_res[i] += (part_matr_as_vec[row * j + i] * part_vec[j]);
 
-	// подсчет оставшихс€ столбцов  (column % proc_num)
-	if (proc_rank == Main_Process) {
-		for (int i = 0; i < row; i++)
-			for (int j = numb_columns * proc_num; j < column; j++)
-				res_paral[i] += (matr_as_vec[row * j + i] * vec[j]);
-	}
-	MPI_Gather(part_res, row, MPI_DOUBLE, part_sum, row, MPI_DOUBLE, Main_Process, MPI_COMM_WORLD);
+	// сложение частичных результатов в главный вектор результата
+	MPI_Reduce(part_res, res_paral, row, MPI_DOUBLE, MPI_SUM, Main_Process, MPI_COMM_WORLD);
+	//  ќЌ≈÷ ѕј–јЋЋ≈Ћ№Ќќ√ќ јЋ√ќ–»“ћј
 
 	if (proc_rank == Main_Process) {
-		for (int i = 0; i < proc_num; i++) {
-			for (int j = 0; j < row; j++)
-				res_paral[j] += part_sum[row * i + j];
-		}
-		//  ќЌ≈÷ ѕј–јЋЋ≈Ћ№Ќќ√ќ јЋ√ќ–»“ћј
-
-		//////////////////////////////////
-
 		time_end_paral = MPI_Wtime();
-		// посчет времени работы алгоритма в миллисекудах
-		time_paral = 1000 * (time_end_paral - time_start_paral);
+		time_paral = 1000 * (time_end_paral - time_start_paral); // посчет времени работы алгоритма в миллисекудах
 		cout << endl << "Spend time algorithm (Parallel version): " << time_paral << "ms" << endl << endl;
 
 		// Ќј„јЋќ ѕќ—Ћ≈ƒќ¬ј“≈Ћ№Ќќ√ќ јЋ√ќ–»“ћј
@@ -226,9 +238,8 @@ int main(int argc, char * argv[]) {
 			for (int j = 0; j < column; j++)
 				res_seque[i] += (matr[i][j] * vec[j]);
 		time_end_seque = MPI_Wtime();
-
-		// посчет времени работы алгоритма в миллисекудах
-		time_seque = 1000 * (time_end_seque - time_start_seque);
+		
+		time_seque = 1000 * (time_end_seque - time_start_seque); // посчет времени работы алгоритма в миллисекудах
 		cout << endl << "Spend time algorithm (Sequence version): " << time_seque << "ms" << endl;
 		//  ќЌ≈÷ ѕќ—Ћ≈ƒќ¬ј“≈Ћ№Ќќ√ќ јЋ√ќ–»“ћј
 
@@ -246,7 +257,6 @@ int main(int argc, char * argv[]) {
 
 		// вывод в поток матрицы небольших размеров + вывод мартицы в файл
 		Show_matr(matr, vec, res_paral, row, column);
-
 		// очистка пам€ти 
 		for (int i = 0; i < row; i++)
 			delete[] matr[i];
@@ -255,11 +265,15 @@ int main(int argc, char * argv[]) {
 		delete[] matr_as_vec;
 		delete[] res_seque;
 		delete[] res_paral;
-		delete[] part_sum;
+		delete[] displs_m;
+		delete[] sendcounts_m;
+		delete[] displs_v;
+		delete[] sendcounts_v;
 	}
 	delete[] part_matr_as_vec;
 	delete[] part_vec;
 	delete[] part_res;
+
 	MPI_Finalize();// уничтощение всех MPI процессов и их св€зей
 	return 0;
 }
