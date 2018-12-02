@@ -1,3 +1,4 @@
 ﻿  Source.cpp
+c:\users\днс\documents\visual studio 2015\projects\labmpi\labmpi\source.cpp(81): warning C4101: 'stat': unreferenced local variable
   LabMPI.vcxproj -> C:\Users\ДНС\documents\visual studio 2015\Projects\LabMPI\Debug\LabMPI.exe
   LabMPI.vcxproj -> C:\Users\ДНС\documents\visual studio 2015\Projects\LabMPI\Debug\LabMPI.pdb (Full PDB)

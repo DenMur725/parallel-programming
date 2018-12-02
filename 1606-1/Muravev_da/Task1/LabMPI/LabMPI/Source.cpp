@@ -1,82 +1,83 @@
-#include <mpi.h>
-#include <iostream>
+#include <mpi.h> // «адача 1 є10 —умма элементов матрицы
 #include <ctime>
+#include <iostream>
 #include <fstream>
-#include <cstdlib>
-#include <cstdio>
 using namespace std;
-#define Main_Process		0
-#define Port_Size_Vector	2
-#define Port_Vector			4
-#define Port_Part_Sum		8
+#define Main_Process 0
 
-int proc_num;			// число процессов
-int proc_rank;			// номер текущего процесса
-int size_vec_for_proc;	// длина вектора содержащего часть элементов выделенных дл€ 1 процесса
-double part_sum;		// сумма элементов выделенных дл€ 1 процесса
-
-double** Create_matr(int _size_row, int _size_column) {// генераци€ матрицы
-	if (_size_row < 1 || _size_column < 1)
+double* Create_matr_as_vec(int _size) {// генераци€ матрицы в векторе
+	if ( _size < 1)
 		return NULL;
-
-	srand((unsigned)time(NULL));
-	double** _matr = new double*[_size_row];
-	for (int i = 0; i < _size_row; i++)
-		_matr[i] = new double[_size_column];
 	int a = 0, b = 0;
-	cout << endl << "Enter range [a,b]" << endl;
+	cout << endl << "Enter range [a,b] for matrix" << endl;
 	cin >> a >> b;
-	for (int i = 0; i < _size_row; i++)
-		for (int j = 0; j < _size_column; j++)
-			_matr[i][j] = rand() % (b - a + 1) + a;
-	return _matr;
+	double*  _matr_as_vec = new double[_size];
+	for (int i = 0; i < _size; i++)
+			_matr_as_vec[i] = rand() % (b - a + 1) + a;
+	return  _matr_as_vec;
 }
-
-double* Matr_to_vec(double** _matr, int _size_row, int _size_column) {// конвертаци€ матрицы в вектор
-	if (_matr == NULL || _size_row < 1 || _size_column < 1)
-		return NULL;
-
-	double* _vec = new double[_size_row * _size_column];
-	int id_vec = 0;
-	for (int i = 0; i < _size_row; i++)
-		for (int j = 0; j < _size_column; j++)
-			_vec[id_vec++] = _matr[i][j];
-	return _vec;
-}
-
-void Show_matr(double** _matr, int _size_row, int _size_column) {// вывод матрицы в поток и в файл
-	if (_matr == NULL || _size_row < 1 || _size_column < 1)
+void Show_matr(double* _matr_as_vec, int _row, int _column) {// вывод матрицы в поток и в файл
+	if (_matr_as_vec == NULL || _row < 1 || _column < 1)
 		return;
-	if (_size_row < 21 || _size_column < 11) {
-		cout << "Matrix " << _size_row << "x" << _size_column << endl;
+	int delta = 7;
+	int id_vec = 0;
+	if (_row < 18 || _column < 8) {
+		cout << "Matrix [" << _row << "x" << _column << "]" << endl;
 
-		for (int i = 0; i < _size_row; i++) {
-			for (int j = 0; j < _size_column; j++) {
-				cout.width(7);
-				cout << _matr[i][j];
+		for (int i = 0; i < _row; i++) {
+			for (int j = 0; j < _column; j++) {
+				cout.width(delta);
+				cout << _matr_as_vec[id_vec++];
 			}
 			cout << endl << endl;
 		}
 	}
-	cout << "Output matrix to file? (y/n) ";
+	id_vec = 0;
+	cout << endl << "Output matrix to file? (y/n) ";
 	char answer = 'n';
 	cin >> answer;
 	if (answer == 'y') {
 		ofstream strm("Matrix.txt");
-		strm << "Matrix " << _size_row << "x" << _size_column << endl;
-		for (int i = 0; i < _size_row; i++) {
-			for (int j = 0; j < _size_column; j++) {
-				strm.width(7);
-				strm << _matr[i][j];
+		strm << "Matrix [" << _row << "x" << _column << "]" << endl;
+		for (int i = 0; i < _row; i++) {
+			for (int j = 0; j < _column; j++) {
+				strm.width(delta);
+				strm << _matr_as_vec[id_vec++];
 			}
 			strm << endl << endl;
 		}
 		strm.close();
 	}
 }
+int Equality_test(double _seque, double _paral) {// проверка идентичности результатов
+	if (_seque != _paral)
+		return 0;
+	return 1;
+}
 
 int main(int argc, char * argv[]) {
-	int err_code;
+	int proc_num;			// число процессов
+	int proc_rank;			// номер текущего процесса
+	int size_part_vec;		// объем данных мартицы выделенных одному процессу
+	
+	double* matr_as_vec = NULL;							// матрица преобразованна€ в вектор
+	int row = 0, column = 0;							// размеры матрицы
+	int size = 0;										// длина вектора
+
+	double sum_seque = 0;								// итогова€ сумма последовательной версии алгоритма
+	double sum_paral = 0;								// итогова€ сумма параллельной версии алгоритма
+
+	double time_seque = 0, time_paral = 0;				// врем€ работы последовательной и параллельной версии алгоритма
+	double time_start_seque = 0, time_start_paral = 0;	// врем€ начала работы -//-
+	double time_end_seque = 0, time_end_paral = 0;		// врем€ конца работы -//-
+
+	double* part_matr_as_vec = NULL;					// часть матрицы принимаема€ каждым процессом
+	double part_sum = 0;								// частична€ сумма
+
+	int* displs = NULL;									// массив смещений в векторе
+	int* sendcounts = NULL;								// массив длин подвекторов
+
+	int err_code = 0;
 	MPI_Status stat;							// структура атрибутов сообщений дл€ "общени€" процессов
 	err_code = MPI_Init(&argc, &argv);			// передача всем процессам аргументов командной строки
 	if (err_code != MPI_SUCCESS) {				// проверка на успешность инициализации процессов
@@ -86,88 +87,76 @@ int main(int argc, char * argv[]) {
 	MPI_Comm_size(MPI_COMM_WORLD, &proc_num);	// функци€ определени€ числа процессов
 	MPI_Comm_rank(MPI_COMM_WORLD, &proc_rank);	// функци€ определени€ номера текущего процесса
 
-	if (proc_num < 1) {
-		cout << "Error! The number of processes must be at least 1";
-		return -1;
-	}
-	if (proc_rank == Main_Process) {						// код главного процесса
+	if (proc_rank == Main_Process) {			// код главного процесса
 
-		double** matr = NULL;								// матрица
-		int size_row = 0, size_column = 0;					// размеры матрицы
+		cout << endl << "Number process: " << proc_num << endl;
+		cout << "Enter the number of row: ";
+		cin >> row;
+		cout << "Enter the number of columns: ";
+		cin >> column;
+		size = row * column;
 
-		double* matr_as_vec = NULL;							// матрица преобразованна€ в вектор
-		int size_vec;										// длина вектора содержащего все элементы матрицы
-
-		double sum_seque = 0, sum_paral = 0;				// сумма элементов последовательной и параллельной версии алгоритма
-		double time_seque = 0, time_paral = 0;				// врем€ работы -//-
-		double time_start_seque = 0, time_start_paral = 0;	// врем€ начала работы -//-
-		double time_end_seque = 0, time_end_paral = 0;		// врем€ конца работы -//-
-
-															// ввод размеров матрицы
-		cout << "Input size of row: ";
-		cin >> size_row;
-		cout << "Input size of column: ";
-		cin >> size_column;
-
-		// генераци€ матрицы и преобразование ее в вектор
-		matr = Create_matr(size_row, size_column);
-		if (matr == NULL) {
+		// генераци€ матрицы, вектора, а также представление матрицы в виде вектора
+		srand((unsigned)time(NULL));
+		matr_as_vec = Create_matr_as_vec(size);
+		if (matr_as_vec == NULL) {
 			cout << "Error! Incorrect input data for matrix";
+			MPI_Finalize();
 			return -1;
 		}
-		size_vec = size_row * size_column;
-		matr_as_vec = Matr_to_vec(matr, size_row, size_column);
-		if (matr == NULL) {
-			cout << "Error! Incorrect input data for vector";
-			return -1;
-		}
+		// подсчет объема работы каждого процесса 
+		size_part_vec = size / proc_num;
+		int ost = size % proc_num;
 
-		// вывод в командную строку матрицы небольших размеров + вывод мартицы в файл
-		Show_matr(matr, size_row, size_column);
+		displs = new int[proc_num];
+		sendcounts = new int[proc_num];
+		for (int i = 0; i < ost; i++)
+			sendcounts[i] = size_part_vec + 1;
+		for (int i = ost; i < proc_num; i++)
+			sendcounts[i] = size_part_vec;
+		displs[0] = 0;
+		for (int i = 1; i < proc_num; i++) {
+			displs[i] = displs[i - 1] + sendcounts[i - 1];
+		}
+	}
+	// Ќј„јЋќ ѕј–јЋЋ≈Ћ№Ќќ√ќ јЋ√ќ–»“ћј
+
+	// отправка каждому процессу массива данных и их кол-во
+	MPI_Bcast(&size, 1, MPI_INT, Main_Process, MPI_COMM_WORLD);
+
+	size_part_vec = size / proc_num;
+	if (proc_rank < size % proc_num)
+		size_part_vec++;
+	part_matr_as_vec = new double[size_part_vec];
+
+	MPI_Scatterv(matr_as_vec, sendcounts, displs, MPI_DOUBLE, part_matr_as_vec, size_part_vec, MPI_DOUBLE, Main_Process, MPI_COMM_WORLD);
+
+	if (proc_rank == Main_Process)
+		time_start_paral = MPI_Wtime();
+
+	for (int i = 0; i < size_part_vec; i++)
+		part_sum += part_matr_as_vec[i];
+
+	// сложение частичных результатов в итоговую сумму
+	MPI_Reduce(&part_sum, &sum_paral, 1, MPI_DOUBLE, MPI_SUM, Main_Process, MPI_COMM_WORLD);
+
+	//  ќЌ≈÷ ѕј–јЋЋ≈Ћ№Ќќ√ќ јЋ√ќ–»“ћј
+
+	if (proc_rank == Main_Process) {
+		time_end_paral = MPI_Wtime();
+		time_paral = 1000 * (time_end_paral - time_start_paral); // посчет времени работы алгоритма в миллисекудах
+		cout << endl << "Spend time algorithm (Parallel version): " << time_paral << "ms" << endl << endl;
 
 		// Ќј„јЋќ ѕќ—Ћ≈ƒќ¬ј“≈Ћ№Ќќ√ќ јЋ√ќ–»“ћј
 		time_start_seque = MPI_Wtime();
-		for (int i = 0; i < size_row; i++)
-			for (int j = 0; j < size_column; j++)
-				sum_seque += matr[i][j];
+		for (int i = 0; i < size; i++)
+			sum_seque += matr_as_vec[i];
 		time_end_seque = MPI_Wtime();
 
-		// посчет времени работы алгоритма в миллисекудах
-		time_seque = 1000 * (time_end_seque - time_start_seque);
-		cout << endl << "Spend time algorithm (Sequence version): " << time_seque << "ms";
-		cout << endl << "Sum of all elements in matrix (Sequence version): " << sum_seque << endl;
+		time_seque = 1000 * (time_end_seque - time_start_seque); // посчет времени работы алгоритма в миллисекудах
+		cout << endl << "Spend time algorithm (Sequence version): " << time_seque << "ms" << endl;
 		//  ќЌ≈÷ ѕќ—Ћ≈ƒќ¬ј“≈Ћ№Ќќ√ќ јЋ√ќ–»“ћј
 
-		cout << endl << "Number process: " << proc_num << endl;
-		// подсчет объема работы каждого процесса
-		size_vec_for_proc = size_vec / proc_num;
-
-		// Ќј„јЋќ ѕј–јЋЋ≈Ћ№Ќќ√ќ јЋ√ќ–»“ћј
-		// отправка каждому процессу массива данных и их кол-во
-		for (int i = 1; i < proc_num; i++)
-			MPI_Send(&size_vec_for_proc, 1, MPI_INT, i, Port_Size_Vector, MPI_COMM_WORLD);
-		for (int i = 1; i < proc_num; i++)
-			MPI_Send(matr_as_vec + size_vec_for_proc * (i - 1), size_vec_for_proc, MPI_DOUBLE, i, Port_Vector, MPI_COMM_WORLD);
-
-		time_start_paral = MPI_Wtime();
-		// подсчет оставшихс€ элементов вектора  (size_vec % proc_num)
-		part_sum = 0;
-		for (int i = size_vec_for_proc * (proc_num - 1); i < size_vec; i++)
-			part_sum += matr_as_vec[i];
-		sum_paral = part_sum;
-
-		// ожидание от всех процессов подсчитанных частичных сумм
-		for (int i = 1; i < proc_num; i++) {
-			MPI_Recv(&part_sum, 1, MPI_DOUBLE, i, Port_Part_Sum, MPI_COMM_WORLD, &stat);
-			sum_paral += part_sum;
-		}
-		time_end_paral = MPI_Wtime();
-
-		// посчет времени работы алгоритма в миллисекудах
-		time_paral = 1000 * (time_end_paral - time_start_paral);
-		cout << endl << "Spend time algorithm (Parallel version): " << time_paral << "ms";
-		cout << endl << "Sum of all elements in matrix (Parallel version): " << sum_paral << endl << endl;
-		//  ќЌ≈÷ ѕј–јЋЋ≈Ћ№Ќќ√ќ јЋ√ќ–»“ћј
 
 		// вывод результатов работы алгоритмов
 		if (time_seque < time_paral)
@@ -175,33 +164,20 @@ int main(int argc, char * argv[]) {
 		else
 			cout << "Parallel version faster sequence" << endl;
 
-		if (sum_seque == sum_paral)
-			cout << "Sum sequence and parallel version identical" << endl;
+		if (Equality_test(sum_seque, sum_paral))
+			cout << "Result sequence and parallel version identical" << endl;
 		else
-			cout << "Sum sequence and parallel version not identical" << endl;
+			cout << "Result sequence and parallel version not identical" << endl;
 
-		// очистка пам€ти
-		for (int i = 0; i < size_row; i++)
-			delete matr[i];
-		delete matr;
-		delete matr_as_vec;
+		// вывод в поток матрицы небольших размеров + вывод мартицы в файл
+		Show_matr(matr_as_vec, row, column);
+		// очистка пам€ти 
+		delete[] matr_as_vec;
+		delete[] displs;
+		delete[] sendcounts;
 	}
-	else { // код вспомогательных процессов
+	delete[] part_matr_as_vec;
 
-		   // прием данных из главного процесса
-		MPI_Recv(&size_vec_for_proc, 1, MPI_INT, Main_Process, Port_Size_Vector, MPI_COMM_WORLD, &stat);
-		double* vec = new double[size_vec_for_proc];
-		MPI_Recv(vec, size_vec_for_proc, MPI_DOUBLE, Main_Process, Port_Vector, MPI_COMM_WORLD, &stat);
-
-		// подсчет частичной суммы
-		part_sum = 0;
-		for (int i = 0; i < size_vec_for_proc; i++)
-			part_sum += vec[i];
-
-		// отправка в главный процесс частичной суммы
-		MPI_Send(&part_sum, 1, MPI_DOUBLE, Main_Process, Port_Part_Sum, MPI_COMM_WORLD);
-		delete vec;
-	}
 	MPI_Finalize();// уничтощение всех MPI процессов и их св€зей
 	return 0;
 }

@@ -1,0 +1,7 @@
+﻿  Source.cpp
+Source.cpp(81): warning C4101: 'stat': unreferenced local variable
+  Generating code
+  All 145 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+  Finished generating code
+  LabMPI.vcxproj -> C:\Users\ДНС\documents\visual studio 2015\Projects\LabMPI\Release\LabMPI.exe
+  LabMPI.vcxproj -> C:\Users\ДНС\documents\visual studio 2015\Projects\LabMPI\Release\LabMPI.pdb (Full PDB)
